@@ -292,13 +292,18 @@ static bool load_model(App* app, const std::string& filename) {
     const aiScene* scene = importer.ReadFile(
         filename,
         aiProcess_Triangulate |
+        aiProcess_PreTransformVertices |
         aiProcess_GenSmoothNormals |
         aiProcess_JoinIdenticalVertices |
         aiProcess_ImproveCacheLocality |
         aiProcess_FlipUVs);
 
-    if (!scene || !scene->HasMeshes()) {
-        gtk_label_set_text(GTK_LABEL(app->status), "Failed to load model.");
+    if (!scene || !scene->HasMeshes() || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE)) {
+        std::string err = importer.GetErrorString();
+        if (err.empty()) err = "unknown Assimp error";
+        std::string status = "Failed to load model: " + err;
+        gtk_label_set_text(GTK_LABEL(app->status), status.c_str());
+        std::cerr << status << '\n';
         return false;
     }
 
