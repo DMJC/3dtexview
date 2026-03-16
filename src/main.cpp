@@ -494,10 +494,14 @@ static gboolean on_render(GtkGLArea* area, GdkGLContext*, gpointer data) {
 
     glUseProgram(app->shader);
 
-    Mat4 proj = mat_perspective(60.f * static_cast<float>(M_PI) / 180.f, static_cast<float>(w) / static_cast<float>(h), 0.01f, 500.f);
-    Mat4 view = mat_translate(-app->center_x, -app->center_y, -app->center_z - app->radius * 2.2f);
+    const float near_z = std::max(0.01f, app->radius * 0.01f);
+    const float far_z = std::max(500.f, app->radius * 20.f);
+    Mat4 proj = mat_perspective(60.f * static_cast<float>(M_PI) / 180.f, static_cast<float>(w) / static_cast<float>(h), near_z, far_z);
+    Mat4 view = mat_translate(0.0f, 0.0f, -app->radius * 2.2f);
     Mat4 rot = mat_rotate_y(app->rotate);
-    Mat4 model = rot;
+    Mat4 to_origin = mat_translate(-app->center_x, -app->center_y, -app->center_z);
+    Mat4 from_origin = mat_translate(app->center_x, app->center_y, app->center_z);
+    Mat4 model = mat_mul(from_origin, mat_mul(rot, to_origin));
     Mat4 mvp = mat_mul(proj, mat_mul(view, model));
 
     glUniformMatrix4fv(app->u_mvp, 1, GL_FALSE, mvp.m.data());
