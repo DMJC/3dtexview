@@ -209,6 +209,7 @@ static void clear_textures(App* app) {
 }
 
 static bool load_texture_to_gpu(TextureEntry& t) {
+    std::cerr << "Loading texture [" << t.type_name << "] " << t.path << '\n';
     GError* err = nullptr;
     GdkPixbuf* pix = gdk_pixbuf_new_from_file(t.path.c_str(), &err);
     if (!pix) {
@@ -247,6 +248,10 @@ static bool load_texture_to_gpu(TextureEntry& t) {
 
     std::error_code ec;
     t.mtime = std::filesystem::last_write_time(t.path, ec);
+    std::cerr << "Loaded texture id=" << t.id
+              << " gl_tex=" << t.gl_tex
+              << " size=" << width << "x" << height
+              << " channels=" << channels << '\n';
     return true;
 }
 
@@ -288,6 +293,7 @@ static void upload_mesh(MeshGpu& mg, const std::vector<Vertex>& v, const std::ve
 }
 
 static bool load_model(App* app, const std::string& filename) {
+    std::cerr << "Loading model: " << filename << '\n';
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(
         filename,
@@ -306,6 +312,10 @@ static bool load_model(App* app, const std::string& filename) {
         std::cerr << status << '\n';
         return false;
     }
+
+    std::cerr << "Assimp scene loaded: meshes=" << scene->mNumMeshes
+              << " materials=" << scene->mNumMaterials
+              << " embedded_textures=" << scene->mNumTextures << '\n';
 
     if (app->gl_ready) {
         clear_meshes(app);
@@ -384,6 +394,10 @@ static bool load_model(App* app, const std::string& filename) {
 
     for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
         aiMesh* mesh = scene->mMeshes[i];
+        std::cerr << "Processing mesh[" << i << "] name='" << mesh->mName.C_Str()
+                  << "' vertices=" << mesh->mNumVertices
+                  << " faces=" << mesh->mNumFaces
+                  << " material_index=" << mesh->mMaterialIndex << '\n';
         std::vector<Vertex> vertices;
         vertices.reserve(mesh->mNumVertices);
         for (unsigned int v = 0; v < mesh->mNumVertices; ++v) {
@@ -435,6 +449,9 @@ static bool load_model(App* app, const std::string& filename) {
     if (app->gl_ready) {
         for (auto& t : app->textures) load_texture_to_gpu(t);
     }
+
+    std::cerr << "Model ready: gpu_meshes=" << app->meshes.size()
+              << " textures=" << app->textures.size() << '\n';
 
     refresh_tree(app);
     gtk_label_set_text(GTK_LABEL(app->status), filename.c_str());
