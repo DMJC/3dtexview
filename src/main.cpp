@@ -663,6 +663,7 @@ static GtkWidget* build_ui(App* app) {
 
     app->gl_area = gtk_gl_area_new();
     gtk_gl_area_set_has_depth_buffer(GTK_GL_AREA(app->gl_area), TRUE);
+    gtk_gl_area_set_has_alpha(GTK_GL_AREA(app->gl_area), FALSE);
     gtk_widget_set_hexpand(app->gl_area, TRUE);
     gtk_widget_set_vexpand(app->gl_area, TRUE);
     gtk_paned_pack1(GTK_PANED(paned), app->gl_area, TRUE, FALSE);
