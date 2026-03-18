@@ -209,6 +209,7 @@ static void clear_textures(App* app) {
 }
 
 static bool load_texture_to_gpu(TextureEntry& t) {
+    std::cerr << "Loading texture [" << t.type_name << "] " << t.path << '\n';
     GError* err = nullptr;
     GdkPixbuf* pix = gdk_pixbuf_new_from_file(t.path.c_str(), &err);
     if (!pix) {
@@ -247,6 +248,10 @@ static bool load_texture_to_gpu(TextureEntry& t) {
 
     std::error_code ec;
     t.mtime = std::filesystem::last_write_time(t.path, ec);
+    std::cerr << "Loaded texture id=" << t.id
+              << " gl_tex=" << t.gl_tex
+              << " size=" << width << "x" << height
+              << " channels=" << channels << '\n';
     return true;
 }
 
@@ -288,19 +293,29 @@ static void upload_mesh(MeshGpu& mg, const std::vector<Vertex>& v, const std::ve
 }
 
 static bool load_model(App* app, const std::string& filename) {
+    std::cerr << "Loading model: " << filename << '\n';
     Assimp::Importer importer;
     const aiScene* scene = importer.ReadFile(
         filename,
         aiProcess_Triangulate |
+        aiProcess_PreTransformVertices |
         aiProcess_GenSmoothNormals |
         aiProcess_JoinIdenticalVertices |
         aiProcess_ImproveCacheLocality |
         aiProcess_FlipUVs);
 
-    if (!scene || !scene->HasMeshes()) {
-        gtk_label_set_text(GTK_LABEL(app->status), "Failed to load model.");
+    if (!scene || !scene->HasMeshes() || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE)) {
+        std::string err = importer.GetErrorString();
+        if (err.empty()) err = "unknown Assimp error";
+        std::string status = "Failed to load model: " + err;
+        gtk_label_set_text(GTK_LABEL(app->status), status.c_str());
+        std::cerr << status << '\n';
         return false;
     }
+
+    std::cerr << "Assimp scene loaded: meshes=" << scene->mNumMeshes
+              << " materials=" << scene->mNumMaterials
+              << " embedded_textures=" << scene->mNumTextures << '\n';
 
     if (app->gl_ready) {
         clear_meshes(app);
@@ -379,6 +394,10 @@ static bool load_model(App* app, const std::string& filename) {
 
     for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
         aiMesh* mesh = scene->mMeshes[i];
+        std::cerr << "Processing mesh[" << i << "] name='" << mesh->mName.C_Str()
+                  << "' vertices=" << mesh->mNumVertices
+                  << " faces=" << mesh->mNumFaces
+                  << " material_index=" << mesh->mMaterialIndex << '\n';
         std::vector<Vertex> vertices;
         vertices.reserve(mesh->mNumVertices);
         for (unsigned int v = 0; v < mesh->mNumVertices; ++v) {
@@ -431,6 +450,9 @@ static bool load_model(App* app, const std::string& filename) {
         for (auto& t : app->textures) load_texture_to_gpu(t);
     }
 
+    std::cerr << "Model ready: gpu_meshes=" << app->meshes.size()
+              << " textures=" << app->textures.size() << '\n';
+
     refresh_tree(app);
     gtk_label_set_text(GTK_LABEL(app->status), filename.c_str());
     gtk_gl_area_queue_render(GTK_GL_AREA(app->gl_area));
@@ -472,10 +494,14 @@ static gboolean on_render(GtkGLArea* area, GdkGLContext*, gpointer data) {
 
     glUseProgram(app->shader);
 
-    Mat4 proj = mat_perspective(60.f * static_cast<float>(M_PI) / 180.f, static_cast<float>(w) / static_cast<float>(h), 0.01f, 500.f);
-    Mat4 view = mat_translate(-app->center_x, -app->center_y, -app->center_z - app->radius * 2.2f);
+    const float near_z = std::max(0.01f, app->radius * 0.01f);
+    const float far_z = std::max(500.f, app->radius * 20.f);
+    Mat4 proj = mat_perspective(60.f * static_cast<float>(M_PI) / 180.f, static_cast<float>(w) / static_cast<float>(h), near_z, far_z);
+    Mat4 view = mat_translate(0.0f, 0.0f, -app->radius * 2.2f);
     Mat4 rot = mat_rotate_y(app->rotate);
-    Mat4 model = rot;
+    Mat4 to_origin = mat_translate(-app->center_x, -app->center_y, -app->center_z);
+    Mat4 from_origin = mat_translate(app->center_x, app->center_y, app->center_z);
+    Mat4 model = mat_mul(from_origin, mat_mul(rot, to_origin));
     Mat4 mvp = mat_mul(proj, mat_mul(view, model));
 
     glUniformMatrix4fv(app->u_mvp, 1, GL_FALSE, mvp.m.data());
@@ -658,6 +684,7 @@ static GtkWidget* build_ui(App* app) {
 
     app->gl_area = gtk_gl_area_new();
     gtk_gl_area_set_has_depth_buffer(GTK_GL_AREA(app->gl_area), TRUE);
+    gtk_gl_area_set_has_alpha(GTK_GL_AREA(app->gl_area), FALSE);
     gtk_widget_set_hexpand(app->gl_area, TRUE);
     gtk_widget_set_vexpand(app->gl_area, TRUE);
     gtk_paned_pack1(GTK_PANED(paned), app->gl_area, TRUE, FALSE);
